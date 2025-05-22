@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, shrink-to-fit=no, viewport-fit=cover">
+    <link rel="stylesheet" href="style/main.css">
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <script src="js/vue.js"></script>
+    <script src="js/axios.js"></script>
+    <script src="js/crypto.js"></script>
+    <title>萬鑫LINE Agent</title>
+</head>
+
+<body>
+    <div class="msg" id="app">
+        <div class="logo">
+            <img src="img/logo.jpg">
+        </div>
+        <div class="stateTxt" :class="{error: error}">{{stateTxt}}</div>
+        <div class="animate-spin">
+            <div class="inner" v-if="loading"></div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                const stateTxt = ref('資料處理中，請稍後');
+                const loading = ref(true);
+                const error = ref(false);
+                const set = ref({});
+
+                // 取得設置
+                async function getSet() {
+                    const res = await axios.get("json/set.json");
+                    set.value = res.data
+                }
+
+                // 初始化 LIFF
+                async function initLiff() {
+                    liff.init({ liffId: set.value.liffId }).then(() => {
+                        if (liff.isLoggedIn()) {
+                            // 獲取使用者資料
+                            liff.getProfile().then(profile => {
+
+                                // LINE 唯一身份識別碼
+                                const userId = profile.userId;
+                                // LINE 上的暱稱
+                                const displayName = profile.displayName;
+
+                                // 如果沒有 agent 參數，則提供預設值
+                                const agent = getQueryParam('agent');
+                                const agentToSend = agent || '未知';
+
+                                // 要寫入的資料
+                                const data = {
+                                    fields: {
+                                        userId,
+                                        displayName,
+                                        agent: agentToSend
+                                    }
+                                };
+
+                                // 發送資料到 Airtable
+                                fetch(`https://api.airtable.com/v0/${set.value.baseId}/${set.value.tableBame}`, {
+                                    method: 'POST',
+                                    headers: {
+                                        Authorization: `Bearer ${set.value.apiKey}`,
+                                        'Content-Type': 'application/json'
+                                    },
+                                    body: JSON.stringify(data)
+                                })
+                                    .then(res => res.json())
+                                    .then(result => {
+                                        stateTxt.value = '資料更新成功記錄，即將跳轉';
+                                        loading.value = false;
+                                        liff.openWindow({
+                                            url: set.value.lineUrl,
+                                            external: true
+                                        });
+                                    })
+                                    .catch(err => {
+                                        stateTxt.value = '資料寫入失敗';
+                                        loading.value = false;
+                                        error.value = true;
+                                    });
+                            }).catch(err => {
+                                stateTxt.value = '獲取使用者資料失敗';
+                                loading.value = false;
+                                error.value = true;
+                            });
+                        } else {
+                            stateTxt.value = '用戶未登入LINE';
+                            loading.value = false;
+                            // 如果未登入，請求登入
+                            liff.login(); 
+                        }
+                    }).catch((err) => {
+                        stateTxt.value = 'LIFF 初始化失敗';
+                        loading.value = false;
+                        error.value = true;
+                        // 當初始化失敗時，可以重新初始化
+                        setTimeout(() => {
+                            stateTxt.value = 'LIFF 再次初始化';
+                            loading.value = true;
+                            error.value = false;
+
+                            liff.init({ liffId: set.value.liffId }).catch(err => {
+                                stateTxt.value = 'LIFF 初始化失敗';
+                                loading.value = false;
+                                error.value = true;
+                            });
+                        }, 1000);
+                    });
+                }
+
+                onMounted(async () => {
+                    await getSet();
+                    await initLiff();
+                });
+
+                return {
+                    stateTxt,
+                    loading,
+                    set,
+                    error,
+                    getSet,
+                    initLiff
+                };
+            }
+        }).mount("#app");
+    </script>
+</body>
+
+</html>
