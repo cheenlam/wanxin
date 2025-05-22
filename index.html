@@ -65,29 +65,43 @@
                                     }
                                 };
 
-                                // 發送資料到 Airtable
-                                fetch(`https://api.airtable.com/v0/${set.value.baseId}/${set.value.tableBame}`, {
-                                    method: 'POST',
-                                    headers: {
-                                        Authorization: `Bearer ${set.value.apiKey}`,
-                                        'Content-Type': 'application/json'
-                                    },
-                                    body: JSON.stringify(data)
-                                })
-                                    .then(res => res.json())
-                                    .then(result => {
-                                        stateTxt.value = '資料更新成功記錄，即將跳轉';
-                                        loading.value = false;
-                                        liff.openWindow({
-                                            url: set.value.lineUrl,
-                                            external: true
-                                        });
-                                    })
-                                    .catch(err => {
-                                        stateTxt.value = '資料寫入失敗';
-                                        loading.value = false;
-                                        error.value = true;
+                                const savedUserId = getCookie('line_user_id');
+
+                                if (savedUserId == userId) {
+                                    // 已記錄過，直接跳轉
+                                    stateTxt.value = '已記錄用戶，跳轉中...';
+                                    loading.value = false;
+                                    liff.openWindow({
+                                        url: set.value.lineUrl,
+                                        external: true
                                     });
+                                } else {
+                                    // 發送資料到 Airtable
+                                    fetch(`https://api.airtable.com/v0/${set.value.baseId}/${set.value.tableName}`, {
+                                        method: 'POST',
+                                        headers: {
+                                            Authorization: `Bearer ${set.value.apiKey}`,
+                                            'Content-Type': 'application/json'
+                                        },
+                                        body: JSON.stringify(data)
+                                    })
+                                        .then(res => res.json())
+                                        .then(result => {
+                                            setCookie('line_user_id', userId); // 寫入 Cookie
+                                            stateTxt.value = '資料更新成功記錄，即將跳轉';
+                                            loading.value = false;
+                                            liff.openWindow({
+                                                url: set.value.lineUrl,
+                                                external: true
+                                            });
+                                        })
+                                        .catch(err => {
+                                            stateTxt.value = '資料寫入失敗';
+                                            loading.value = false;
+                                            error.value = true;
+                                        });
+                                }
+
                             }).catch(err => {
                                 stateTxt.value = '獲取使用者資料失敗';
                                 loading.value = false;
@@ -97,7 +111,7 @@
                             stateTxt.value = '用戶未登入LINE';
                             loading.value = false;
                             // 如果未登入，請求登入
-                            liff.login(); 
+                            liff.login();
                         }
                     }).catch((err) => {
                         stateTxt.value = 'LIFF 初始化失敗';
@@ -118,6 +132,24 @@
                     });
                 }
 
+                // Cookie操作
+                function setCookie(name, value, days = 3650) {
+                    const date = new Date();
+                    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+                    document.cookie = `${name}=${value}; expires=${date.toUTCString()}; path=/`;
+                }
+
+                function getCookie(name) {
+                    const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+                    return match ? match[2] : null;
+                }
+
+                // 取得網址參數
+                function getQueryParam(name) {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    return urlParams.get(name);
+                }
+
                 onMounted(async () => {
                     await getSet();
                     await initLiff();
@@ -129,7 +161,10 @@
                     set,
                     error,
                     getSet,
-                    initLiff
+                    initLiff,
+                    setCookie,
+                    getCookie,
+                    getQueryParam
                 };
             }
         }).mount("#app");
